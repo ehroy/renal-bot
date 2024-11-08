@@ -56,6 +56,10 @@ async function makeRequest(
     const options = {
       method: body ? "POST" : "GET",
       headers: {
+        Connection: "keep-alive",
+        "Accept-Language": "id-ID",
+        Host: "api.wattpad.com",
+        Accept: "*/*",
         Authorization: "gyJp8LykESHBcLntrLevPA",
         "User-Agent":
           "Android App v10.51.0; Model: G011A; Android SDK: 28; Connection: None; Locale: en_US;",
@@ -74,12 +78,6 @@ async function makeRequest(
 
     try {
       const response = await fetch(url, options);
-
-      // Validasi status response
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
       const data = await response.json();
       return data;
     } catch (error) {
@@ -163,12 +161,15 @@ bot.onText(/\/premium/, async (msg) => {
 
   // Function to handle the premium process
   const handlePremiumProcess = async () => {
-    try {
-      const queryIds = readQueryIdsFromFile("premium_accounts.txt");
-      for (let index = 0; index < queryIds.length; index++) {
+    const queryIds = readQueryIdsFromFile("premium_accounts.txt");
+    for (let index = 0; index < queryIds.length; index++) {
+      let login;
+      let validate;
+      try {
         const proxy =
           "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
         const [email, password] = queryIds[index].split("|");
+        validate = email;
         log(email, "warning");
         const params = new URLSearchParams({
           password: password,
@@ -177,7 +178,7 @@ bot.onText(/\/premium/, async (msg) => {
             "token,user(username,email,has_password,inbox,externalId,createDate),ga(created,group,logged)",
           type: "wattpad",
         });
-        const login = await makeRequest(
+        login = await makeRequest(
           "https://api.wattpad.com/v4/sessions",
           params,
           { "Content-Type": "application/x-www-form-urlencoded" },
@@ -238,13 +239,10 @@ bot.onText(/\/premium/, async (msg) => {
         } else {
           log("login failed..", "error");
         }
+      } catch (error) {
+        log(login.message, "error");
+        bot.sendMessage(chatId, `[ status : ${login.message} ${validate} ]`);
       }
-    } catch (error) {
-      console.error("Gagal memproses pesanan OTP:", error);
-      bot.sendMessage(
-        chatId,
-        "terjadi kesalahan proses saat proxy atau yang lain nuggu hingga next selanjutnya"
-      );
     }
   };
 
@@ -258,9 +256,13 @@ bot.onText(/\/premium/, async (msg) => {
 });
 
 bot.onText(/\/manual/, async (msg) => {
+  let register;
+  let validate;
   const [command, email] = msg.text.split(" ");
+  validate = email;
   const chatId = msg.chat.id.toString();
   let data;
+
   try {
     const proxy =
       "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
@@ -284,7 +286,7 @@ bot.onText(/\/manual/, async (msg) => {
         "token,ga,user(username,description,avatar,name,email,genderCode,language,birthdate,verified,isPrivate,ambassador,is_staff,follower,following,backgroundUrl,votesReceived,numFollowing,numFollowers,createDate,followerRequest,website,facebook,twitter,followingRequest,numStoriesPublished,numLists,location,externalId,programs,showSocialNetwork,verified_email,has_accepted_latest_tos,email_reverification_status,language,inbox(unread),has_password,connectedServices)",
       trackingId: uuidv4(),
     });
-    const register = await makeRequest(
+    register = await makeRequest(
       "https://api.wattpad.com/v4/users",
       params,
       { "Content-Type": "application/x-www-form-urlencoded" },
@@ -344,16 +346,15 @@ bot.onText(/\/manual/, async (msg) => {
       log("login failed..", "error");
     }
   } catch (error) {
-    console.error("Gagal memproses pesanan OTP:", error.toString());
-    bot.sendMessage(
-      chatId,
-      "terjadi kesalahan proses saat proxy atau yang lain nuggu hingga next selanjutnya"
-    );
+    log(register.message, "error");
+    bot.sendMessage(chatId, `[ status : ${register.message} ${validate} ]`);
   }
 });
 bot.onText(/\/create/, async (msg) => {
   const chatId = msg.chat.id.toString();
   let data;
+  let validate;
+  let register;
   try {
     const email =
       faker.internet.username() +
@@ -364,6 +365,7 @@ bot.onText(/\/create/, async (msg) => {
       Math.floor(Math.random() * (12 - 10 + 1) + 10) +
       "@" +
       process.env.DOMAIN;
+    validate = email;
     log(email, "warning");
     const proxy =
       "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
@@ -387,7 +389,7 @@ bot.onText(/\/create/, async (msg) => {
         "token,ga,user(username,description,avatar,name,email,genderCode,language,birthdate,verified,isPrivate,ambassador,is_staff,follower,following,backgroundUrl,votesReceived,numFollowing,numFollowers,createDate,followerRequest,website,facebook,twitter,followingRequest,numStoriesPublished,numLists,location,externalId,programs,showSocialNetwork,verified_email,has_accepted_latest_tos,email_reverification_status,language,inbox(unread),has_password,connectedServices)",
       trackingId: uuidv4(),
     });
-    const register = await makeRequest(
+    register = await makeRequest(
       "https://api.wattpad.com/v4/users",
       params,
       { "Content-Type": "application/x-www-form-urlencoded" },
@@ -447,11 +449,8 @@ bot.onText(/\/create/, async (msg) => {
       log("login failed..", "error");
     }
   } catch (error) {
-    console.error("Gagal memproses pesanan OTP:", error.toString());
-    bot.sendMessage(
-      chatId,
-      "terjadi kesalahan proses saat proxy atau yang lain nuggu hingga next selanjutnya"
-    );
+    log(register.message, "error");
+    bot.sendMessage(chatId, `[ status : ${register.message} ${validate} ]`);
   }
 });
 bot.onText(/\/start/, (msg) => {
