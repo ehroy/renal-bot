@@ -85,7 +85,10 @@ async function makeRequest(
     } catch (error) {
       // Menangani kesalahan
       if (attempt < retries) {
-        log(`Attempt ${attempt} failed. Retrying...`, "error");
+        log(
+          `Attempt ${attempt} failed ${error.toString()}. Retrying...`,
+          "error"
+        );
         return makeRequestWithRetry(); // Retry request
       } else {
         // Jika semua percobaan gagal, lemparkan error
@@ -352,16 +355,16 @@ bot.onText(/\/create/, async (msg) => {
   const chatId = msg.chat.id.toString();
   let data;
   try {
-    console.log(faker.internet.email());
     const email =
       faker.internet.username() +
       faker.internet
         .email()
         .split("@")[0]
-        .replaceAll(/[^a-zA-Z0-9]/g, "") +
+        .replace(/[^a-zA-Z0-9]/g, "") +
+      Math.floor(Math.random() * (12 - 10 + 1) + 10) +
       "@" +
       process.env.DOMAIN;
-    console.log(email);
+    log(email, "warning");
     const proxy =
       "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
     const birthday = `${Math.floor(
@@ -373,7 +376,7 @@ bot.onText(/\/create/, async (msg) => {
     const params = new URLSearchParams({
       type: "wattpad",
       username:
-        faker.internet.username().replaceAll(/[^a-zA-Z0-9]/g, "") +
+        faker.internet.username().replace(/[^a-zA-Z0-9]/g, "") +
         Math.floor(Math.random() * (12 - 10 + 1) + 10),
       password: password, // Ganti dengan variabel atau input sesuai kebutuhan
       email: email,
