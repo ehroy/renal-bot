@@ -105,7 +105,7 @@ async function makeRequest(
 
   return makeRequestWithRetry();
 }
-const token = "5355944753:AAFDjZUCqOXw6lHb3joVeOGm5vWtlZlNvqE";
+const token = "5355944753:AAH_tnkHc-uFHm9meBR3Aur6gJgwwlhJZ8A";
 const bot = new TelegramBot(token, { polling: true });
 let currentMessageId;
 async function updateButtonText(chatId, orderId, apiKey, newText) {
@@ -161,6 +161,8 @@ bot.onText(/\/premium/, async (msg) => {
 
   // Function to handle the premium process
   const handlePremiumProcess = async () => {
+    let total = 0;
+    let gagal = 0;
     const queryIds = readQueryIdsFromFile("premium_accounts.txt");
     for (let index = 0; index < queryIds.length; index++) {
       let login;
@@ -215,10 +217,7 @@ bot.onText(/\/premium/, async (msg) => {
               "account sudah premium tidak perlu premiumkan lagi ",
               "success"
             );
-            await bot.sendMessage(
-              chatId,
-              `premium status :\nemail : ${email}\nusername : ${login.user.username}\npassword : ${password}\nstatus : premium\n\nnote : account tersimpan premium_accounts.txt`
-            );
+            total += 1;
           } else {
             log("account expired premium perlu premiumkan lagi ", "error");
             const makePremium = await makeRequest(
@@ -242,8 +241,15 @@ bot.onText(/\/premium/, async (msg) => {
       } catch (error) {
         log(login.message, "error");
         bot.sendMessage(chatId, `[ status : ${login.message} ${validate} ]`);
+        gagal += 1;
       }
     }
+    await bot.sendMessage(
+      chatId,
+      `premium status : total ${queryIds.length} succeess total ${total} gagal ${gagal}`
+    );
+    total = 0;
+    gagal = 0;
   };
 
   // Run the premium process when the /premium command is triggered
@@ -253,6 +259,91 @@ bot.onText(/\/premium/, async (msg) => {
   setInterval(async () => {
     await handlePremiumProcess();
   }, 14400000); // 4 hours in milliseconds
+});
+
+bot.onText(/\/login/, async (msg) => {
+  const chatId = msg.chat.id.toString();
+  const [command, data] = msg.text.split(" ");
+
+  let login;
+  let validate;
+  try {
+    const proxy =
+      "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
+    const [email, password] = data.split("|");
+    validate = email;
+    log(email, "warning");
+    const params = new URLSearchParams({
+      password: password,
+      username: email,
+      fields:
+        "token,user(username,email,has_password,inbox,externalId,createDate),ga(created,group,logged)",
+      type: "wattpad",
+    });
+    login = await makeRequest(
+      "https://api.wattpad.com/v4/sessions",
+      params,
+      { "Content-Type": "application/x-www-form-urlencoded" },
+      proxy
+    );
+    log(login.token + "|" + login.user.username, "warning");
+    if (login.token) {
+      log("login Successfully..", "success");
+      const makePremium = await makeRequest(
+        `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
+        JSON.stringify({
+          receipt:
+            "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
+          sku: "wp_premium_1_month_d",
+        }),
+        {
+          "Content-Type": "application/json; charset=utf-8",
+          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
+        },
+        proxy
+      );
+      await delay(1000);
+      const checkSubscription = await makeRequest(
+        `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
+        null,
+        {
+          "Content-Type": "application/json; charset=utf-8",
+          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
+        },
+        proxy
+      );
+      if (checkSubscription.premium) {
+        log("account sudah premium tidak perlu premiumkan lagi ", "success");
+        await bot.sendMessage(
+          chatId,
+          `premium status :\nemail : ${email}\nusername : ${login.user.username}\npassword : ${password}\nstatus : premium\n\nnote : account tersimpan premium_accounts.txt`
+        );
+      } else {
+        log("account expired premium perlu premiumkan lagi ", "error");
+        const makePremium = await makeRequest(
+          `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
+          JSON.stringify({
+            receipt:
+              "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
+            sku: "wp_premium_1_month_d",
+          }),
+          {
+            "Content-Type": "application/json; charset=utf-8",
+            cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
+          },
+          proxy
+        );
+        console.log(makePremium);
+      }
+    } else {
+      log("login failed..", "error");
+    }
+  } catch (error) {
+    log(login.message, "error");
+    bot.sendMessage(chatId, `[ status : ${login.message} ${validate} ]`);
+  }
+
+  // Set interval to run the process every 4 hours (14400000 milliseconds)
 });
 
 bot.onText(/\/manual/, async (msg) => {
@@ -456,7 +547,7 @@ bot.onText(/\/create/, async (msg) => {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/manual name@example [ untuk create manual menggunakan email include premium ]\nnote : [ semua disimpan di premium_accounts.txt ]`;
+  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/manual name@example [ untuk create manual menggunakan email include premium ]/loginexample@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts.txt ]`;
   bot.sendMessage(chatId, text);
 });
 // Menangani callback dari tombol Inline Keyboard
