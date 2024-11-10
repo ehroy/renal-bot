@@ -189,20 +189,7 @@ bot.onText(/\/premium/, async (msg) => {
         log(login.token + "|" + login.user.username, "warning");
         if (login.token) {
           log("login Successfully..", "success");
-          const makePremium = await makeRequest(
-            `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
-            JSON.stringify({
-              receipt:
-                "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-              sku: "wp_premium_1_month_d",
-            }),
-            {
-              "Content-Type": "application/json; charset=utf-8",
-              cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
-            },
-            proxy
-          );
-          await delay(1000);
+
           const checkSubscription = await makeRequest(
             `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
             null,
@@ -212,28 +199,53 @@ bot.onText(/\/premium/, async (msg) => {
             },
             proxy
           );
-          if (checkSubscription.premium) {
-            log(
-              "account sudah premium tidak perlu premiumkan lagi ",
-              "success"
-            );
-            total += 1;
-          } else {
-            log("account expired premium perlu premiumkan lagi ", "error");
-            const makePremium = await makeRequest(
-              `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
-              JSON.stringify({
-                receipt:
-                  "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-                sku: "wp_premium_1_month_d",
-              }),
-              {
-                "Content-Type": "application/json; charset=utf-8",
-                cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
-              },
+          try {
+            const proxy =
+              "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
+            const [email, password] = queryIds[index].split("|");
+            validate = email;
+            log(email, "warning");
+            const params = new URLSearchParams({
+              password: password,
+              username: email,
+              fields:
+                "token,user(username,email,has_password,inbox,externalId,createDate),ga(created,group,logged)",
+              type: "wattpad",
+            });
+            login = await makeRequest(
+              "https://api.wattpad.com/v4/sessions",
+              params,
+              { "Content-Type": "application/x-www-form-urlencoded" },
               proxy
             );
-            console.log(makePremium);
+            log(login.token + "|" + login.user.username, "warning");
+            if (login.token) {
+              log("login Successfully..", "success");
+              const makePremium = await makeRequest(
+                `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
+                JSON.stringify({
+                  receipt:
+                    "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
+                  sku: "wp_premium_1_month_d",
+                }),
+                {
+                  "Content-Type": "application/json; charset=utf-8",
+                  cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
+                },
+                proxy
+              );
+
+              total += 1;
+            } else {
+              log("login failed..", "error");
+            }
+          } catch (error) {
+            log(login.message, "error");
+            bot.sendMessage(
+              chatId,
+              `[ status : ${login.message} ${validate} ]`
+            );
+            gagal += 1;
           }
         } else {
           log("login failed..", "error");
@@ -303,38 +315,6 @@ bot.onText(/\/login/, async (msg) => {
         proxy
       );
       await delay(1000);
-      const checkSubscription = await makeRequest(
-        `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
-        null,
-        {
-          "Content-Type": "application/json; charset=utf-8",
-          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
-        },
-        proxy
-      );
-      if (checkSubscription.premium) {
-        log("account sudah premium tidak perlu premiumkan lagi ", "success");
-        await bot.sendMessage(
-          chatId,
-          `premium status :\nemail : ${email}\nusername : ${login.user.username}\npassword : ${password}\nstatus : premium\n\nnote : account tersimpan premium_accounts.txt`
-        );
-      } else {
-        log("account expired premium perlu premiumkan lagi ", "error");
-        const makePremium = await makeRequest(
-          `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
-          JSON.stringify({
-            receipt:
-              "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-            sku: "wp_premium_1_month_d",
-          }),
-          {
-            "Content-Type": "application/json; charset=utf-8",
-            cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
-          },
-          proxy
-        );
-        console.log(makePremium);
-      }
     } else {
       log("login failed..", "error");
     }
