@@ -6,9 +6,10 @@ import pkg from "https-proxy-agent";
 const { HttpsProxyAgent } = pkg;
 import TelegramBot from "node-telegram-bot-api";
 import { faker } from "@faker-js/faker";
-import { v4 as uuidv4 } from "uuid";
+import * as cheerio from "cheerio";
 import dotenv from "dotenv";
 dotenv.config();
+
 function log(msg, type = "info") {
   const timestamp = new Date().toLocaleTimeString();
   switch (type) {
@@ -28,19 +29,16 @@ function log(msg, type = "info") {
       console.log(`[${timestamp}] ➤  ${msg}`);
   }
 }
+const randstr = (length) =>
+  new Promise((resolve, reject) => {
+    var text = "";
+    var possible = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-function readQueryIdsFromFile(queryFilePath) {
-  try {
-    const queryContent = fs.readFileSync(queryFilePath, "utf-8");
-    return queryContent
-      .split("\n")
-      .map((query) => query.trim())
-      .filter((query) => query); // Ensure to remove extra newlines or spaces
-  } catch (error) {
-    console.error(chalk.red(`Error reading ${queryFilePath}:`), error);
-    return [];
-  }
-}
+    for (var i = 0; i < length; i++)
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+
+    resolve(text);
+  });
 async function makeRequest(
   url,
   body = null,
@@ -56,13 +54,6 @@ async function makeRequest(
     const options = {
       method: body ? "POST" : "GET",
       headers: {
-        Connection: "keep-alive",
-        "Accept-Language": "id-ID",
-        Host: "api.wattpad.com",
-        Accept: "*/*",
-        Authorization: "gyJp8LykESHBcLntrLevPA",
-        "User-Agent":
-          "Android App v10.51.0; Model: G011A; Android SDK: 28; Connection: None; Locale: en_US;",
         ...headers,
       },
     };
@@ -105,474 +96,544 @@ async function makeRequest(
 
   return makeRequestWithRetry();
 }
+const functionGetLink = (email, domain) =>
+  new Promise((resolve, reject) => {
+    fetch(`https://generator.email/inbox1`, {
+      method: "get",
+      headers: {
+        accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3",
+        "accept-encoding": "gzip, deflate, br",
+        cookie: `_ga=GA1.2.659238676.1567004853; _gid=GA1.2.273162863.1569757277; embx=%5B%22${email}%40${domain}%22%2C%22hcycl%40nongzaa.tk%22%5D; _gat=1; io=io=tIcarRGNgwqgtn40O${randstr(
+          3
+        )}; surl=${domain}%2F${email}`,
+        "upgrade-insecure-requests": 1,
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36",
+      },
+    })
+      .then((res) => res.text())
+      .then((text) => {
+        const $ = cheerio.load(text);
+        const src = $(
+          "#email-table > div.e7m.row.list-group-item > div.e7m.col-md-12.ma1 > div.e7m.mess_bodiyy > p:nth-child(3) > a"
+        ).attr("href");
+        resolve(src);
+      })
+      .catch((err) => reject(err));
+  });
 const token = "5355944753:AAH_tnkHc-uFHm9meBR3Aur6gJgwwlhJZ8A";
 const bot = new TelegramBot(token, { polling: true });
-let currentMessageId;
-async function updateButtonText(chatId, orderId, apiKey, newText) {
-  const newOptions = {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: newText, // Ganti dengan teks baru
-            callback_data: `message_${orderId}_${apiKey}`,
-          },
-          {
-            text: "Repeat Message", // Ganti dengan teks baru
-            callback_data: `repeat_${orderId}_${apiKey}`,
-          },
-        ],
-      ],
-    },
-  };
+bot.onText(/\/add (\d+)/, async (msg, match) => {
+  if (msg.chat.type === "private") {
+    const userId = match[1];
+    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
 
-  await bot.editMessageReplyMarkup(newOptions.reply_markup, {
-    chat_id: chatId,
-    message_id: currentMessageId, // Gunakan messageId yang telah disimpan
-  });
-}
-async function sendOrderMessage(chatId, message) {
-  const options = {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "Waiting Message",
-            callback_data: `message_${orderId}_${apiKey}`,
-          },
-          {
-            text: "Cancel",
-            callback_data: `cancel_${orderId}_${apiKey}`,
-          },
-        ],
-      ],
-    },
-  };
+    // Cek apakah user sudah ada
+    if (!users.some((user) => user.user === userId)) {
+      users.push({ user: userId });
+      fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
+      bot.sendMessage(msg.chat.id, `User ${userId} telah ditambahkan.`);
+    } else {
+      bot.sendMessage(msg.chat.id, `User ${userId} sudah ada.`);
+    }
+  }
+});
 
-  const sentMessage = await bot.sendMessage(
-    chatId,
-    `Pesanan OTP berhasil.\nID Pesanan: ${orderId}.\nNumber phone: ${number}.`,
-    options
-  );
-  currentMessageId = sentMessage.message_id; // Simpan messageId untuk digunakan nanti
-}
-bot.onText(/\/premium/, async (msg) => {
-  const chatId = msg.chat.id.toString();
+// Menangani perintah untuk menghapus pengguna
+bot.onText(/\/delete (\d+)/, async (msg, match) => {
+  if (msg.chat.type === "private") {
+    const userId = match[1];
+    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
 
-  // Function to handle the premium process
-  const handlePremiumProcess = async () => {
-    let total = 0;
-    let gagal = 0;
-    const queryIds = readQueryIdsFromFile("premium_accounts.txt");
-    for (let index = 0; index < queryIds.length; index++) {
-      let login;
-      let validate;
-      try {
-        const proxy =
-          "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
-        const [email, password] = queryIds[index].split("|");
-        validate = email;
-        log(email, "warning");
-        const params = new URLSearchParams({
-          password: password,
-          username: email,
-          fields:
-            "token,user(username,email,has_password,inbox,externalId,createDate),ga(created,group,logged)",
-          type: "wattpad",
-        });
-        login = await makeRequest(
-          "https://api.wattpad.com/v4/sessions",
-          params,
-          { "Content-Type": "application/x-www-form-urlencoded" },
-          proxy
-        );
-        log(login.token + "|" + login.user.username, "warning");
-        if (login.token) {
-          log("login Successfully..", "success");
-
-          const checkSubscription = await makeRequest(
-            `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
-            null,
+    // Cek apakah user ada dalam daftar
+    if (users.some((user) => user.user === userId)) {
+      users = users.filter((user) => user.user !== userId);
+      fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
+      bot.sendMessage(msg.chat.id, `User ${userId} telah dihapus.`);
+    } else {
+      bot.sendMessage(msg.chat.id, `User ${userId} tidak ditemukan.`);
+    }
+  }
+});
+bot.onText(/\/login/, async (msg) => {
+  if (msg.chat.type === "private") {
+    const queryContent = fs.readFileSync("user.json", "utf-8");
+    const count = JSON.parse(queryContent);
+    for (let index = 0; index < count.length; index++) {
+      if (msg.from.id === parseInt(count[index].user)) {
+        const chatId = msg.chat.id.toString();
+        const [command, email] = msg.text.split(" ");
+        try {
+          log(
+            `[ reply message from ${msg.from.username} ] ` + email,
+            "warning"
+          );
+          const proxy =
+            "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
+          const getEmailValidate = await makeRequest(
+            "https://generator.email/check_adres_validation3.php",
+            `usr=${email.split("@")[0]}&dmn=${email.split("@")[1]}`,
             {
-              "Content-Type": "application/json; charset=utf-8",
-              cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
+              Cookie: `surl=${email.split("@")[1]}/${email.split("@")[0]}`,
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+              "Content-Type":
+                "application/x-www-form-urlencoded; charset=UTF-8",
+            },
+            null
+          );
+
+          const CraeteMakeAccount = await makeRequest(
+            "https://www.googleapis.com/identitytoolkit/v3/relyingparty/createAuthUri?key=AIzaSyDtG1AU22ErnQD60AzBAcaknySiz9_CEq0",
+            JSON.stringify({
+              identifier: email,
+              continueUri: "http://localhost",
+            }),
+            {
+              "content-type": "application/json",
+              "x-android-package": "com.alightcreative.motion",
+              "x-android-cert": "ECA6BF91B8715A6F810ED0BBFC65B6CD578F52A8",
+              "accept-language": "en-US",
+              "x-client-version":
+                "Android/Fallback/X22003001/FirebaseUI-Android",
+              "x-firebase-gmpid": "1:414370328124:android:f1394131c8b84de3",
+              "x-firebase-client":
+                "H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA",
+              "x-firebase-appcheck": "eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==",
+              "user-agent":
+                "Dalvik/2.1.0 (Linux; U; Android 9; A5010 Build/PI)",
             },
             proxy
           );
-          try {
-            const proxy =
-              "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
-            const [email, password] = queryIds[index].split("|");
-            validate = email;
-            log(email, "warning");
-            const params = new URLSearchParams({
-              password: password,
-              username: email,
-              fields:
-                "token,user(username,email,has_password,inbox,externalId,createDate),ga(created,group,logged)",
-              type: "wattpad",
-            });
-            login = await makeRequest(
-              "https://api.wattpad.com/v4/sessions",
-              params,
-              { "Content-Type": "application/x-www-form-urlencoded" },
-              proxy
-            );
-            log(login.token + "|" + login.user.username, "warning");
-            if (login.token) {
-              log("login Successfully..", "success");
-              const makePremium = await makeRequest(
-                `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
+          // console.log(CraeteMakeAccount);
+          if (CraeteMakeAccount.registered === true) {
+            await bot.sendMessage(chatId, "proses login...").then(async () => {
+              log(
+                `[ reply message from ${msg.from.username} ] ` +
+                  "email registered",
+                "success"
+              );
+              const getOtpCode = await makeRequest(
+                "https://www.googleapis.com/identitytoolkit/v3/relyingparty/getOobConfirmationCode?key=AIzaSyDtG1AU22ErnQD60AzBAcaknySiz9_CEq0",
                 JSON.stringify({
-                  receipt:
-                    "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-                  sku: "wp_premium_1_month_d",
+                  requestType: 6,
+                  email: email,
+                  androidInstallApp: true,
+                  canHandleCodeInApp: true,
+                  continueUrl:
+                    "https://alightcreative.com?ui_sid=3458523138&ui_sd=0",
+                  iosBundleId: "com.alightcreative.motion",
+                  androidPackageName: "com.alightcreative.motion",
+                  androidMinimumVersion: "585",
+                  clientType: "CLIENT_TYPE_ANDROID",
                 }),
                 {
-                  "Content-Type": "application/json; charset=utf-8",
-                  cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
+                  "content-type": "application/json",
+                  "x-android-package": "com.alightcreative.motion",
+                  "x-android-cert": "ECA6BF91B8715A6F810ED0BBFC65B6CD578F52A8",
+                  "accept-language": "en-US",
+                  "x-client-version":
+                    "Android/Fallback/X22003001/FirebaseUI-Android",
+                  "x-firebase-gmpid": "1:414370328124:android:f1394131c8b84de3",
+                  "x-firebase-client":
+                    "H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA",
+                  "x-firebase-appcheck": "eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==",
+                  "user-agent":
+                    "Dalvik/2.1.0 (Linux; U; Android 9; A5010 Build/PI)",
                 },
                 proxy
               );
-
-              total += 1;
-            } else {
-              log("login failed..", "error");
-            }
-          } catch (error) {
-            log(login.message, "error");
-            bot.sendMessage(
-              chatId,
-              `[ status : ${login.message} ${validate} ]`
+              if (getOtpCode.email) {
+                log(
+                  `[ reply message from ${msg.from.username} ] ` +
+                    "Sent Code OobConfirmationCode Succesfully",
+                  "success"
+                );
+                bot.sendMessage(
+                  chatId,
+                  `silakan input link veryfikasi yang sudah dikirim...`
+                );
+                bot.once("message", async (replyMsg) => {
+                  if (
+                    replyMsg.text.includes(
+                      "https://alightcreative.com/auth_action"
+                    )
+                  ) {
+                    const Code = decodeURIComponent(replyMsg.text);
+                    const regex = /[?&]oobCode=([^&]+)/;
+                    const match = Code.match(regex);
+                    const oobCode = match[1];
+                    const Verify = await makeRequest(
+                      "https://www.googleapis.com/identitytoolkit/v3/relyingparty/emailLinkSignin?key=AIzaSyDtG1AU22ErnQD60AzBAcaknySiz9_CEq0",
+                      JSON.stringify({
+                        email: email,
+                        oobCode: oobCode,
+                        clientType: "CLIENT_TYPE_ANDROID",
+                      }),
+                      {
+                        "content-type": "application/json",
+                        "x-android-package": "com.alightcreative.motion",
+                        "x-android-cert":
+                          "ECA6BF91B8715A6F810ED0BBFC65B6CD578F52A8",
+                        "accept-language": "en-US",
+                        "x-client-version":
+                          "Android/Fallback/X22003001/FirebaseUI-Android",
+                        "x-firebase-gmpid":
+                          "1:414370328124:android:f1394131c8b84de3",
+                        "x-firebase-client":
+                          "H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA",
+                        "x-firebase-appcheck":
+                          "eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==",
+                        "user-agent":
+                          "Dalvik/2.1.0 (Linux; U; Android 9; A5010 Build/PI)",
+                      },
+                      proxy
+                    );
+                    if (Verify.localId) {
+                      log(
+                        `[ reply message from ${msg.from.username} ] ` +
+                          `OobCode valid `,
+                        "success"
+                      );
+                      const paymentVerify = await makeRequest(
+                        "https://us-central1-alight-creative.cloudfunctions.net/verifyPurchase",
+                        JSON.stringify({
+                          data: {
+                            productId: "alightcreative.motion.1y_t20",
+                            token:
+                              "jlglpndjbjgokncoenhdglip.AO-J1Oy49uLvERISL0dQkMx9pA21uG6T7MwsBAeHCL19yJlUKjyXldo1WUCVq-V_7l8JlIKAebOvOUY4aEa4RVhMAhjOl8-ifWr91k5m848aDvxrTPQz7c0",
+                            skuType: "subs",
+                            orderId: `GPA.33${
+                              Math.floor(Math.random() * (99 - 10 + 1)) + 10
+                            }-${
+                              Math.floor(Math.random() * (9999 - 1000 + 1)) +
+                              1000
+                            }-${
+                              Math.floor(Math.random() * (9999 - 1000 + 1)) +
+                              1000
+                            }-${
+                              Math.floor(Math.random() * (99999 - 10000 + 1)) +
+                              10000
+                            }`,
+                          },
+                        }),
+                        {
+                          authorization: `Bearer ${Verify.idToken}`,
+                          "firebase-instance-id-token":
+                            "cL5GYUTvSEWDrm86U7qnqC:APA91bEIEtHooTbg3FIMRER23CdbOcw0eGgN3rEBTyG1fG9ic3KjnmCwtHlxzYctG7rFPUSfj9iMNPRDImd7zaVylWUEXVmsS5eduB38xRNCAQ8b8QREGfcrsYpV02uCeZCiizh_mLIM",
+                          "content-type": "application/json; charset=utf-8",
+                          host: "us-central1-alight-creative.cloudfunctions.net",
+                          connection: "Keep-Alive",
+                          "accept-encoding": "gzip",
+                          "user-agent": "okhttp/4.12.0",
+                        },
+                        proxy
+                      );
+                      if (paymentVerify.result.status === "success") {
+                        const messagereply = `[ ACCOUNT SUCCESS CREATE PREMIUM ]\nEMAIL : ${email}\nSTATUS : PREMIUM\nEXPIRED : ${new Date(
+                          paymentVerify.result.expiryTimeMillis
+                        ).toLocaleDateString()} `;
+                        log(
+                          `[ reply message from ${msg.from.username} ] ` +
+                            "payment succesfully",
+                          "success"
+                        );
+                        bot.sendMessage(chatId, messagereply);
+                        fs.appendFileSync(
+                          "premium_accounts_align_align.txt",
+                          `${email}|${Verify.idToken}\n`
+                        );
+                      } else {
+                        log(
+                          `[ reply message from ${msg.from.username} ] ` +
+                            "payment failed",
+                          "error"
+                        );
+                      }
+                    } else {
+                      log(
+                        `[ reply message from ${msg.from.username} ] ` +
+                          `OobCode failed `,
+                        "error"
+                      );
+                    }
+                  }
+                });
+              } else {
+                log(
+                  `[ reply message from ${msg.from.username} ] ` +
+                    "Sent Code OobConfirmationCode Failed",
+                  "error"
+                );
+              }
+            });
+          } else {
+            log(
+              `[ reply message from ${msg.from.username} ] ` +
+                "email not registered",
+              "error"
             );
-            gagal += 1;
           }
-        } else {
-          log("login failed..", "error");
+        } catch (error) {
+          bot.sendMessage(chatId, `[ FAILED PROSES ]`);
         }
-      } catch (error) {
-        log(login.message, "error");
-        bot.sendMessage(chatId, `[ status : ${login.message} ${validate} ]`);
-        gagal += 1;
-      }
-    }
-    await bot.sendMessage(
-      chatId,
-      `premium status : total ${queryIds.length} succeess total ${total} gagal ${gagal}`
-    );
-    total = 0;
-    gagal = 0;
-  };
-
-  // Run the premium process when the /premium command is triggered
-  await handlePremiumProcess();
-
-  // Set interval to run the process every 4 hours (14400000 milliseconds)
-  setInterval(async () => {
-    await handlePremiumProcess();
-  }, 14400000); // 4 hours in milliseconds
-});
-
-bot.onText(/\/login/, async (msg) => {
-  const chatId = msg.chat.id.toString();
-  const [command, data] = msg.text.split(" ");
-
-  let login;
-  let validate;
-  try {
-    const proxy =
-      "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
-    const [email, password] = data.split("|");
-    validate = email;
-    log(email, "warning");
-    const params = new URLSearchParams({
-      password: password,
-      username: email,
-      fields:
-        "token,user(username,email,has_password,inbox,externalId,createDate),ga(created,group,logged)",
-      type: "wattpad",
-    });
-    login = await makeRequest(
-      "https://api.wattpad.com/v4/sessions",
-      params,
-      { "Content-Type": "application/x-www-form-urlencoded" },
-      proxy
-    );
-    log(login.token + "|" + login.user.username, "warning");
-    if (login.token) {
-      log("login Successfully..", "success");
-      const makePremium = await makeRequest(
-        `https://api.wattpad.com/v4/users/${login.user.username}/subscriptions`,
-        JSON.stringify({
-          receipt:
-            "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-          sku: "wp_premium_1_month_d",
-        }),
-        {
-          "Content-Type": "application/json; charset=utf-8",
-          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${login.token}`,
-        },
-        proxy
-      );
-      await delay(1000);
-    } else {
-      log("login failed..", "error");
-    }
-  } catch (error) {
-    log(login.message, "error");
-    bot.sendMessage(chatId, `[ status : ${login.message} ${validate} ]`);
-  }
-
-  // Set interval to run the process every 4 hours (14400000 milliseconds)
-});
-
-bot.onText(/\/manual/, async (msg) => {
-  let register;
-  let validate;
-  const [command, email] = msg.text.split(" ");
-  validate = email;
-  const chatId = msg.chat.id.toString();
-  let data;
-
-  try {
-    const proxy =
-      "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
-    const birthday = `${Math.floor(
-      Math.random() * (12 - 10 + 1) + 10
-    )}-${Math.floor(Math.random() * (30 - 10 + 1) + 10)}-${Math.floor(
-      Math.random() * (2002 - 1990 + 1) + 1990
-    )}`;
-    const password = process.env.PASSWORD;
-    const params = new URLSearchParams({
-      type: "wattpad",
-      username:
-        faker.internet.username().replaceAll(/[^a-zA-Z0-9]/g, "") +
-        Math.floor(Math.random() * (12 - 10 + 1) + 10),
-      password: password, // Ganti dengan variabel atau input sesuai kebutuhan
-      email: email,
-      birthdate: birthday,
-      language: 1,
-      has_accepted_latest_tos: true,
-      fields:
-        "token,ga,user(username,description,avatar,name,email,genderCode,language,birthdate,verified,isPrivate,ambassador,is_staff,follower,following,backgroundUrl,votesReceived,numFollowing,numFollowers,createDate,followerRequest,website,facebook,twitter,followingRequest,numStoriesPublished,numLists,location,externalId,programs,showSocialNetwork,verified_email,has_accepted_latest_tos,email_reverification_status,language,inbox(unread),has_password,connectedServices)",
-      trackingId: uuidv4(),
-    });
-    register = await makeRequest(
-      "https://api.wattpad.com/v4/users",
-      params,
-      { "Content-Type": "application/x-www-form-urlencoded" },
-      proxy
-    );
-    log(register.token + "|" + register.user.username, "warning");
-    if (register.token) {
-      log("login Successfully..", "success");
-      const makePremium = await makeRequest(
-        `https://api.wattpad.com/v4/users/${register.user.username}/subscriptions`,
-        JSON.stringify({
-          receipt:
-            "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-          sku: "wp_premium_1_month_d",
-        }),
-        {
-          "Content-Type": "application/json; charset=utf-8",
-          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${register.token}`,
-        },
-        proxy
-      );
-      await delay(1000);
-      const checkSubscription = await makeRequest(
-        `https://api.wattpad.com/v4/users/${register.user.username}/subscriptions`,
-        null,
-        {
-          "Content-Type": "application/json; charset=utf-8",
-          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${register.token}`,
-        },
-        proxy
-      );
-      if (checkSubscription.premium) {
-        log("account sudah premium tidak perlu premiumkan lagi ", "success");
-        fs.appendFileSync("premium_accounts.txt", `${email}|${password}\n`);
-        await bot.sendMessage(
-          chatId,
-          `create premium status :\nemail : ${email}\nusername : ${register.user.username}\npassword : ${password}\nstatus : premium\n\nnote : account tersimpan premium_accounts.txt`
-        );
       } else {
-        log("account expired premium perlu premiumkan lagi ", "error");
-        const makePremium = await makeRequest(
-          `https://api.wattpad.com/v4/users/${register.user.username}/subscriptions`,
-          JSON.stringify({
-            receipt:
-              "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-            sku: "wp_premium_1_month_d",
-          }),
-          {
-            "Content-Type": "application/json; charset=utf-8",
-            cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${register.token}`,
-          },
-          proxy
-        );
-        console.log(makePremium);
+        bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
       }
-    } else {
-      log("login failed..", "error");
     }
-  } catch (error) {
-    log(register.message, "error");
-    bot.sendMessage(chatId, `[ status : ${register.message} ${validate} ]`);
   }
 });
+
 bot.onText(/\/create/, async (msg) => {
-  const chatId = msg.chat.id.toString();
-  let data;
-  let validate;
-  let register;
-  try {
-    const email =
-      faker.internet.username() +
-      faker.internet
-        .email()
-        .split("@")[0]
-        .replace(/[^a-zA-Z0-9]/g, "") +
-      Math.floor(Math.random() * (12 - 10 + 1) + 10) +
-      "@" +
-      process.env.DOMAIN;
-    validate = email;
-    log(email, "warning");
-    const proxy =
-      "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
-    const birthday = `${Math.floor(
-      Math.random() * (12 - 10 + 1) + 10
-    )}-${Math.floor(Math.random() * (30 - 10 + 1) + 10)}-${Math.floor(
-      Math.random() * (2002 - 1990 + 1) + 1990
-    )}`;
-    const password = process.env.PASSWORD;
-    const params = new URLSearchParams({
-      type: "wattpad",
-      username:
-        faker.internet.username().replace(/[^a-zA-Z0-9]/g, "") +
-        Math.floor(Math.random() * (12 - 10 + 1) + 10),
-      password: password, // Ganti dengan variabel atau input sesuai kebutuhan
-      email: email,
-      birthdate: birthday,
-      language: 1,
-      has_accepted_latest_tos: true,
-      fields:
-        "token,ga,user(username,description,avatar,name,email,genderCode,language,birthdate,verified,isPrivate,ambassador,is_staff,follower,following,backgroundUrl,votesReceived,numFollowing,numFollowers,createDate,followerRequest,website,facebook,twitter,followingRequest,numStoriesPublished,numLists,location,externalId,programs,showSocialNetwork,verified_email,has_accepted_latest_tos,email_reverification_status,language,inbox(unread),has_password,connectedServices)",
-      trackingId: uuidv4(),
-    });
-    register = await makeRequest(
-      "https://api.wattpad.com/v4/users",
-      params,
-      { "Content-Type": "application/x-www-form-urlencoded" },
-      proxy
-    );
-    log(register.token + "|" + register.user.username, "warning");
-    if (register.token) {
-      log("login Successfully..", "success");
-      const makePremium = await makeRequest(
-        `https://api.wattpad.com/v4/users/${register.user.username}/subscriptions`,
-        JSON.stringify({
-          receipt:
-            "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-          sku: "wp_premium_1_month_d",
-        }),
-        {
-          "Content-Type": "application/json; charset=utf-8",
-          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${register.token}`,
-        },
-        proxy
-      );
-      await delay(1000);
-      const checkSubscription = await makeRequest(
-        `https://api.wattpad.com/v4/users/${register.user.username}/subscriptions`,
-        null,
-        {
-          "Content-Type": "application/json; charset=utf-8",
-          cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${register.token}`,
-        },
-        proxy
-      );
-      if (checkSubscription.premium) {
-        log("account sudah premium tidak perlu premiumkan lagi ", "success");
-        fs.appendFileSync("premium_accounts.txt", `${email}|${password}\n`);
-        await bot.sendMessage(
-          chatId,
-          `create premium status :\nemail : ${email}\nusername : ${register.user.username}\npassword : ${password}\nstatus : premium\n\nnote : account tersimpan premium_accounts.txt`
-        );
+  if (msg.chat.type === "private") {
+    const queryContent = fs.readFileSync("user.json", "utf-8");
+    const count = JSON.parse(queryContent);
+    for (let index = 0; index < count.length; index++) {
+      if (msg.from.id === parseInt(count[index].user)) {
+        const chatId = msg.chat.id.toString();
+        // console.log(chatId);
+        try {
+          const getemail =
+            faker.internet.username() +
+            faker.internet
+              .email()
+              .split("@")[0]
+              .replace(/[^a-zA-Z0-9]/g, "") +
+            Math.floor(Math.random() * (12 - 10 + 1) + 10) +
+            "@" +
+            process.env.DOMAIN;
+          const email = getemail.toLocaleLowerCase();
+          log(
+            `[ reply message from ${msg.from.username} ] ` + email,
+            "warning"
+          );
+          const proxy =
+            "http://6c9xq54vori6n63-country-id:l5lf7iqs9eplqpg@rp.proxyscrape.com:6060";
+          const getEmailValidate = await makeRequest(
+            "https://generator.email/check_adres_validation3.php",
+            `usr=${email.split("@")[0]}&dmn=${process.env.DOMAIN}`,
+            {
+              Cookie: `surl=${process.env.DOMAIN}/${email.split("@")[0]}`,
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+              "Content-Type":
+                "application/x-www-form-urlencoded; charset=UTF-8",
+            },
+            null
+          );
+          if (getEmailValidate.status === "good") {
+            log(`${email} status [ ${getEmailValidate.status} ]`, "success");
+            const CraeteMakeAccount = await makeRequest(
+              "https://www.googleapis.com/identitytoolkit/v3/relyingparty/createAuthUri?key=AIzaSyDtG1AU22ErnQD60AzBAcaknySiz9_CEq0",
+              JSON.stringify({
+                identifier: email,
+                continueUri: "http://localhost",
+              }),
+              {
+                "content-type": "application/json",
+                "x-android-package": "com.alightcreative.motion",
+                "x-android-cert": "ECA6BF91B8715A6F810ED0BBFC65B6CD578F52A8",
+                "accept-language": "en-US",
+                "x-client-version":
+                  "Android/Fallback/X22003001/FirebaseUI-Android",
+                "x-firebase-gmpid": "1:414370328124:android:f1394131c8b84de3",
+                "x-firebase-client":
+                  "H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA",
+                "x-firebase-appcheck": "eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==",
+                "user-agent":
+                  "Dalvik/2.1.0 (Linux; U; Android 9; A5010 Build/PI)",
+              },
+              proxy
+            );
+            if (CraeteMakeAccount.registered === false) {
+              await bot.sendMessage(chatId, "proses register...");
+              log(
+                `[ reply message from ${msg.from.username} ] ` +
+                  "email belum registered",
+                "success"
+              );
+              const getOtpCode = await makeRequest(
+                "https://www.googleapis.com/identitytoolkit/v3/relyingparty/getOobConfirmationCode?key=AIzaSyDtG1AU22ErnQD60AzBAcaknySiz9_CEq0",
+                JSON.stringify({
+                  requestType: 6,
+                  email: email,
+                  androidInstallApp: true,
+                  canHandleCodeInApp: true,
+                  continueUrl:
+                    "https://alightcreative.com?ui_sid=3458523138&ui_sd=0",
+                  iosBundleId: "com.alightcreative.motion",
+                  androidPackageName: "com.alightcreative.motion",
+                  androidMinimumVersion: "585",
+                  clientType: "CLIENT_TYPE_ANDROID",
+                }),
+                {
+                  "content-type": "application/json",
+                  "x-android-package": "com.alightcreative.motion",
+                  "x-android-cert": "ECA6BF91B8715A6F810ED0BBFC65B6CD578F52A8",
+                  "accept-language": "en-US",
+                  "x-client-version":
+                    "Android/Fallback/X22003001/FirebaseUI-Android",
+                  "x-firebase-gmpid": "1:414370328124:android:f1394131c8b84de3",
+                  "x-firebase-client":
+                    "H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA",
+                  "x-firebase-appcheck": "eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==",
+                  "user-agent":
+                    "Dalvik/2.1.0 (Linux; U; Android 9; A5010 Build/PI)",
+                },
+                proxy
+              );
+              if (getOtpCode.email) {
+                log(
+                  `[ reply message from ${msg.from.username} ] ` +
+                    "Sent Code OobConfirmationCode Succesfully",
+                  "success"
+                );
+                let linkConfirm;
+                do {
+                  linkConfirm = await functionGetLink(
+                    email.split("@")[0],
+                    process.env.DOMAIN
+                  );
+                  await delay(500);
+                } while (!linkConfirm);
+                log(
+                  `[ reply message from ${msg.from.username} ] ` +
+                    `Otp Found ${linkConfirm.substring(0, 20)}`,
+                  "success"
+                );
+                const Code = decodeURIComponent(linkConfirm);
+                const regex = /[?&]oobCode=([^&]+)/;
+                const match = Code.match(regex);
+                const oobCode = match[1];
+                const Verify = await makeRequest(
+                  "https://www.googleapis.com/identitytoolkit/v3/relyingparty/emailLinkSignin?key=AIzaSyDtG1AU22ErnQD60AzBAcaknySiz9_CEq0",
+                  JSON.stringify({
+                    email: email,
+                    oobCode: oobCode,
+                    clientType: "CLIENT_TYPE_ANDROID",
+                  }),
+                  {
+                    "content-type": "application/json",
+                    "x-android-package": "com.alightcreative.motion",
+                    "x-android-cert":
+                      "ECA6BF91B8715A6F810ED0BBFC65B6CD578F52A8",
+                    "accept-language": "en-US",
+                    "x-client-version":
+                      "Android/Fallback/X22003001/FirebaseUI-Android",
+                    "x-firebase-gmpid":
+                      "1:414370328124:android:f1394131c8b84de3",
+                    "x-firebase-client":
+                      "H4sIAAAAAAAAAKtWykhNLCpJSk0sKVayio7VUSpLLSrOzM9TslIyUqoFAFyivEQfAAAA",
+                    "x-firebase-appcheck":
+                      "eyJlcnJvciI6IlVOS05PV05fRVJST1IifQ==",
+                    "user-agent":
+                      "Dalvik/2.1.0 (Linux; U; Android 9; A5010 Build/PI)",
+                  },
+                  proxy
+                );
+                if (Verify.localId) {
+                  log(
+                    `[ reply message from ${msg.from.username} ] ` +
+                      `OobCode valid `,
+                    "success"
+                  );
+                  const paymentVerify = await makeRequest(
+                    "https://us-central1-alight-creative.cloudfunctions.net/verifyPurchase",
+                    JSON.stringify({
+                      data: {
+                        productId: "alightcreative.motion.1y_t20",
+                        token:
+                          "jlglpndjbjgokncoenhdglip.AO-J1Oy49uLvERISL0dQkMx9pA21uG6T7MwsBAeHCL19yJlUKjyXldo1WUCVq-V_7l8JlIKAebOvOUY4aEa4RVhMAhjOl8-ifWr91k5m848aDvxrTPQz7c0",
+                        skuType: "subs",
+                        orderId: `GPA.33${
+                          Math.floor(Math.random() * (99 - 10 + 1)) + 10
+                        }-${
+                          Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000
+                        }-${
+                          Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000
+                        }-${
+                          Math.floor(Math.random() * (99999 - 10000 + 1)) +
+                          10000
+                        }`,
+                      },
+                    }),
+                    {
+                      authorization: `Bearer ${Verify.idToken}`,
+                      "firebase-instance-id-token":
+                        "cL5GYUTvSEWDrm86U7qnqC:APA91bEIEtHooTbg3FIMRER23CdbOcw0eGgN3rEBTyG1fG9ic3KjnmCwtHlxzYctG7rFPUSfj9iMNPRDImd7zaVylWUEXVmsS5eduB38xRNCAQ8b8QREGfcrsYpV02uCeZCiizh_mLIM",
+                      "content-type": "application/json; charset=utf-8",
+                      host: "us-central1-alight-creative.cloudfunctions.net",
+                      connection: "Keep-Alive",
+                      "accept-encoding": "gzip",
+                      "user-agent": "okhttp/4.12.0",
+                    },
+                    proxy
+                  );
+                  if (paymentVerify.result.status === "success") {
+                    const messagereply = `[ ACCOUNT SUCCESS CREATE PREMIUM ]\nEMAIL : ${email}\nSTATUS : PREMIUM\nEXPIRED : ${new Date(
+                      paymentVerify.result.expiryTimeMillis
+                    ).toLocaleDateString()} `;
+                    log(
+                      `[ reply message from ${msg.from.username} ] ` +
+                        "payment succesfully",
+                      "success"
+                    );
+                    bot.sendMessage(chatId, messagereply);
+                    fs.appendFileSync(
+                      "premium_accounts_align_align.txt",
+                      `${email}|${Verify.idToken}\n`
+                    );
+                  } else {
+                    log(
+                      `[ reply message from ${msg.from.username} ] ` +
+                        "payment failed",
+                      "error"
+                    );
+                  }
+                } else {
+                  log(
+                    `[ reply message from ${msg.from.username} ] ` +
+                      `OobCode failed `,
+                    "error"
+                  );
+                }
+              } else {
+                log(
+                  `[ reply message from ${msg.from.username} ] ` +
+                    "Sent Code OobConfirmationCode Failed",
+                  "error"
+                );
+              }
+            } else {
+              log(
+                `[ reply message from ${msg.from.username} ] ` +
+                  "email registered",
+                "error"
+              );
+            }
+          } else {
+            log(
+              `[ reply message from ${msg.from.username} ] ` +
+                "failed get email !!",
+              "error"
+            );
+          }
+        } catch (error) {
+          // console.log(error);
+          bot.sendMessage(chatId, `[ FAILED PROSES ]`);
+        }
       } else {
-        log("account expired premium perlu premiumkan lagi ", "error");
-        const makePremium = await makeRequest(
-          `https://api.wattpad.com/v4/users/${register.user.username}/subscriptions`,
-          JSON.stringify({
-            receipt:
-              "jkbphllgeohbioaajhmfineb.AO-J1OzX_ObU0HhP84i3bgUq2uEaf6hgebBJgqa-Nd7BvTCfOf17b67uWlIqG7jBbApaGCTCEGfLFEevEcCL5oLUz_xpsDEmHw",
-            sku: "wp_premium_1_month_d",
-          }),
-          {
-            "Content-Type": "application/json; charset=utf-8",
-            cookie: `locale=en_US; wp_id=a5f9a3f4-7254-41e2-9d74-bb9d984d7307; token=${register.token}`,
-          },
-          proxy
-        );
-        console.log(makePremium);
+        bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
       }
-    } else {
-      log("login failed..", "error");
     }
-  } catch (error) {
-    log(register.message, "error");
-    bot.sendMessage(chatId, `[ status : ${register.message} ${validate} ]`);
   }
 });
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/manual name@example [ untuk create manual menggunakan email include premium ]/loginexample@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts.txt ]`;
+  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/manual name@example [ untuk create manual menggunakan email include premium ]/loginexample@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts_align.txt ]`;
   bot.sendMessage(chatId, text);
-});
-// Menangani callback dari tombol Inline Keyboard
-bot.on("callback_query", async (callbackQuery) => {
-  const message = callbackQuery.message;
-  const chatId = message.chat.id;
-  const action = callbackQuery.data; // Mengambil data dari callback (misalnya repeat_12345 atau cancel_12345)
-
-  const [command, orderId, apiKey] = action.split("_"); // Pisahkan perintah dan ID pesanan
-
-  const sms = new SMSActivate(apiKey, "smshub");
-
-  switch (command) {
-    case "repeat":
-      try {
-        await sms.setStatus(orderId, 3); // Ulangi pesan
-        bot.sendMessage(
-          chatId,
-          `Pesan OTP dengan ID Pesanan ${orderId} telah diulang.`
-        );
-      } catch (error) {
-        console.error("Gagal mengulang pesan:", error);
-        bot.sendMessage(chatId, "Terjadi kesalahan saat mengulang pesan.");
-      }
-      break;
-
-    case "cancel":
-      try {
-        await sms.setStatus(orderId, 8); // Batalkan pesanan
-        bot.sendMessage(
-          chatId,
-          `Pesanan OTP dengan ID Pesanan ${orderId} telah dibatalkan.`
-        );
-      } catch (error) {
-        console.error("Gagal membatalkan pesanan:", error);
-        bot.sendMessage(chatId, "Terjadi kesalahan saat membatalkan pesanan.");
-      }
-      break;
-
-    default:
-      break;
-  }
-
-  // Mengirim pesan kepada pengguna bahwa aksi telah dipilih
-  bot.answerCallbackQuery(callbackQuery.id);
 });
 
 // Notifikasi saat bot aktif
