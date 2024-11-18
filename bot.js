@@ -124,6 +124,56 @@ const functionGetLink = (email, domain) =>
   });
 const token = process.env.TOKENBOT;
 const bot = new TelegramBot(token, { polling: true });
+bot.onText(/\/update (\d+)/, async (msg, match) => {
+  if (msg.chat.type === "private") {
+    const userId = match[1];
+    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
+    if (msg.chat.id.toString() === process.env.CHATID) {
+      // Cek apakah user sudah ada
+      const userIndex = users.findIndex((user) => user.user === userId);
+      if (userIndex !== -1) {
+        bot
+          .sendMessage(
+            msg.chat.id,
+            "input limit access format limit/durasihari example 2/30"
+          )
+          .then(async () => {
+            bot.once("message", async (replyMsg) => {
+              if (replyMsg.text.includes("/")) {
+                const [limit, access] = replyMsg.text.split("/");
+                users[userIndex].limit = parseFloat(limit); // Update limit sesuai kebutuhan
+                const newDuration = new Date();
+                newDuration.setDate(newDuration.getDate() + parseFloat(access)); // Tambahkan 30 hari
+                users[userIndex].accessUntil = newDuration.toISOString(); // Update durasi
+
+                fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
+                bot.sendMessage(
+                  msg.chat.id,
+                  `User ${userId} telah diupdate dengan limit ${limit} dan durasi akses ${access} hari.`
+                );
+                log(
+                  `[ reply message from ${msg.from.username} ] User ${userId} telah ditambahkan dengan limit ${limit} dan durasi akses ${access} hari.`,
+                  "success"
+                );
+              }
+            });
+          });
+      } else {
+        log(
+          `[ reply message from ${msg.from.username} ] User ${userId} sudah ada.`,
+          "error"
+        );
+        bot.sendMessage(msg.chat.id, `User ${userId} sudah ada.`);
+      }
+    } else {
+      log(
+        `[ reply message from ${msg.from.username} ] [ ACCESS DENIED !! ]`,
+        "error"
+      );
+      bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
+    }
+  }
+});
 bot.onText(/\/add (\d+)/, async (msg, match) => {
   if (msg.chat.type === "private") {
     const userId = match[1];
@@ -765,7 +815,7 @@ bot.onText(/\/create/, async (msg) => {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/login example@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts_align.txt ]`;
+  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/manual name@example [ untuk create manual menggunakan email include premium ]/loginexample@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts_align.txt ]`;
   bot.sendMessage(chatId, text);
 });
 
