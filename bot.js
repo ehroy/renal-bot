@@ -122,46 +122,124 @@ const functionGetLink = (email, domain) =>
       })
       .catch((err) => reject(err));
   });
-const token = "5355944753:AAH_tnkHc-uFHm9meBR3Aur6gJgwwlhJZ8A";
+const token = process.env.TOKENBOT;
 const bot = new TelegramBot(token, { polling: true });
 bot.onText(/\/add (\d+)/, async (msg, match) => {
   if (msg.chat.type === "private") {
     const userId = match[1];
     let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
-
-    // Cek apakah user sudah ada
-    if (!users.some((user) => user.user === userId)) {
-      users.push({ user: userId });
-      fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
-      bot.sendMessage(msg.chat.id, `User ${userId} telah ditambahkan.`);
+    if (msg.chat.id.toString() === process.env.CHATID) {
+      // Cek apakah user sudah ada
+      if (!users.some((user) => user.user === userId)) {
+        bot
+          .sendMessage(
+            msg.chat.id,
+            "input limit access format limit/durasihari example 2/30"
+          )
+          .then(async () => {
+            bot.once("message", async (replyMsg) => {
+              if (replyMsg.text.includes("/")) {
+                const [limit, access] = replyMsg.text.split("/");
+                const duration = new Date();
+                duration.setDate(duration.getDate() + parseFloat(access)); // Durasi 30 hari
+                users.push({
+                  user: userId,
+                  role: "user",
+                  limit: parseFloat(limit),
+                  accessUntil: duration.toISOString(),
+                });
+                fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
+                bot.sendMessage(
+                  msg.chat.id,
+                  `User ${userId} telah ditambahkan dengan limit ${limit} dan durasi akses ${access} hari.`
+                );
+                log(
+                  `[ reply message from ${msg.from.username} ] User ${userId} telah ditambahkan dengan limit ${limit} dan durasi akses ${access} hari.`,
+                  "success"
+                );
+              }
+            });
+          });
+      } else {
+        log(
+          `[ reply message from ${msg.from.username} ] User ${userId} sudah ada.`,
+          "error"
+        );
+        bot.sendMessage(msg.chat.id, `User ${userId} sudah ada.`);
+      }
     } else {
-      bot.sendMessage(msg.chat.id, `User ${userId} sudah ada.`);
+      log(
+        `[ reply message from ${msg.from.username} ] [ ACCESS DENIED !! ]`,
+        "error"
+      );
+      bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
     }
   }
 });
-
+bot.onText(/\/cek/, async (msg) => {
+  if (msg.chat.type === "private") {
+    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
+    let userId = msg.chat.id.toString();
+    const user = users.find((user) => user.user === userId);
+    if (user) {
+      bot.sendMessage(
+        msg.chat.id,
+        `[ STATUS ACCOUNT ]\nUSER : ${user.user}\nROLE : ${user.role}\nLIMIT : ${user.limit}\nACCESS : ${user.accessUntil}`
+      );
+    } else {
+      console.log(
+        `[ reply message from ${msg.from.username} ] User ${userId} tidak ditemukan.`,
+        "error"
+      );
+      bot.sendMessage(msg.chat.id, `User ${userId} tidak ditemukan.`);
+    }
+  }
+});
 // Menangani perintah untuk menghapus pengguna
 bot.onText(/\/delete (\d+)/, async (msg, match) => {
   if (msg.chat.type === "private") {
-    const userId = match[1];
-    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
+    if (msg.chat.id.toString() === process.env.CHATID) {
+      const userId = match[1];
+      let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
 
-    // Cek apakah user ada dalam daftar
-    if (users.some((user) => user.user === userId)) {
-      users = users.filter((user) => user.user !== userId);
-      fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
-      bot.sendMessage(msg.chat.id, `User ${userId} telah dihapus.`);
+      // Cek apakah user ada dalam daftar
+      if (users.some((user) => user.user === userId)) {
+        users = users.filter((user) => user.user !== userId);
+        fs.writeFileSync("user.json", JSON.stringify(users, null, 2));
+        log(
+          `[ reply message from ${msg.from.username} ] User ${userId} telah dihapus.`,
+          "success"
+        );
+        bot.sendMessage(msg.chat.id, `User ${userId} telah dihapus.`);
+      } else {
+        log(
+          `[ reply message from ${msg.from.username} ] User ${userId} tidak ditemukan.`,
+          "error"
+        );
+        bot.sendMessage(msg.chat.id, `User ${userId} tidak ditemukan.`);
+      }
     } else {
-      bot.sendMessage(msg.chat.id, `User ${userId} tidak ditemukan.`);
+      log(
+        `[ reply message from ${msg.from.username} ] [ ACCESS DENIED !! ]`,
+        "error"
+      );
+      bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
     }
   }
 });
 bot.onText(/\/login/, async (msg) => {
   if (msg.chat.type === "private") {
-    const queryContent = fs.readFileSync("user.json", "utf-8");
-    const count = JSON.parse(queryContent);
-    for (let index = 0; index < count.length; index++) {
-      if (msg.from.id === parseInt(count[index].user)) {
+    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
+    let userId = msg.chat.id.toString();
+    if (!users.some((user) => user.user === msg.chat.id)) {
+      const existingUser = users.find(
+        (user) => user.user === msg.chat.id.toString()
+      );
+      if (
+        existingUser &&
+        existingUser.limit > 0 &&
+        new Date(existingUser.accessUntil) > new Date()
+      ) {
         const chatId = msg.chat.id.toString();
         const [command, email] = msg.text.split(" ");
         try {
@@ -344,6 +422,25 @@ bot.onText(/\/login/, async (msg) => {
                           "premium_accounts_align_align.txt",
                           `${email}|${Verify.idToken}\n`
                         );
+                        const userIndex = users.findIndex(
+                          (user) => user.user === msg.chat.id.toString()
+                        );
+                        if (userIndex !== -1) {
+                          users[userIndex].limit = users[userIndex].limit - 1;
+                          fs.writeFileSync(
+                            "user.json",
+                            JSON.stringify(users, null, 2)
+                          );
+                          // bot.sendMessage(
+                          //   msg.chat.id,
+                          //   `Limit untuk user ${userId} telah diperbarui menjadi ${users[userIndex].limit}.`
+                          // );
+                        } else {
+                          bot.sendMessage(
+                            msg.chat.id,
+                            `User ${userId} tidak ditemukan.`
+                          );
+                        }
                       } else {
                         log(
                           `[ reply message from ${msg.from.username} ] ` +
@@ -379,18 +476,30 @@ bot.onText(/\/login/, async (msg) => {
           bot.sendMessage(chatId, `[ FAILED PROSES ]`);
         }
       } else {
-        bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
+        bot.sendMessage(
+          msg.chat.id,
+          `User ${userId} masih memiliki akses dan limit.`
+        );
       }
+    } else {
+      bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
     }
   }
 });
 
 bot.onText(/\/create/, async (msg) => {
   if (msg.chat.type === "private") {
-    const queryContent = fs.readFileSync("user.json", "utf-8");
-    const count = JSON.parse(queryContent);
-    for (let index = 0; index < count.length; index++) {
-      if (msg.from.id === parseInt(count[index].user)) {
+    let userId = msg.chat.id.toString();
+    let users = JSON.parse(fs.readFileSync("user.json", "utf-8"));
+    if (!users.some((user) => user.user === msg.chat.id)) {
+      const existingUser = users.find(
+        (user) => user.user === msg.chat.id.toString()
+      );
+      if (
+        existingUser &&
+        existingUser.limit > 0 &&
+        new Date(existingUser.accessUntil) > new Date()
+      ) {
         const chatId = msg.chat.id.toString();
         // console.log(chatId);
         try {
@@ -584,6 +693,25 @@ bot.onText(/\/create/, async (msg) => {
                       "premium_accounts_align_align.txt",
                       `${email}|${Verify.idToken}\n`
                     );
+                    const userIndex = users.findIndex(
+                      (user) => user.user === msg.chat.id.toString()
+                    );
+                    if (userIndex !== -1) {
+                      users[userIndex].limit = users[userIndex].limit - 1;
+                      fs.writeFileSync(
+                        "user.json",
+                        JSON.stringify(users, null, 2)
+                      );
+                      // bot.sendMessage(
+                      //   msg.chat.id,
+                      //   `Limit untuk user ${userId} telah diperbarui menjadi ${users[userIndex].limit}.`
+                      // );
+                    } else {
+                      bot.sendMessage(
+                        msg.chat.id,
+                        `User ${userId} tidak ditemukan.`
+                      );
+                    }
                   } else {
                     log(
                       `[ reply message from ${msg.from.username} ] ` +
@@ -620,19 +748,24 @@ bot.onText(/\/create/, async (msg) => {
             );
           }
         } catch (error) {
-          // console.log(error);
+          console.log(error);
           bot.sendMessage(chatId, `[ FAILED PROSES ]`);
         }
       } else {
-        bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
+        bot.sendMessage(
+          msg.chat.id,
+          `User ${userId} tidak masih memiliki akses dan limit.`
+        );
       }
+    } else {
+      bot.sendMessage(msg.chat.id.toString(), `[ ACCESS DENIED !! ]`);
     }
   }
 });
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/manual name@example [ untuk create manual menggunakan email include premium ]/loginexample@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts_align.txt ]`;
+  const text = `/start [ untuk di cek menu ]\n/create [ untuk di create otomatis include premium ]\n/login example@gmail.com|password [ untuk login premium account ]\nnote : [ semua disimpan di premium_accounts_align.txt ]`;
   bot.sendMessage(chatId, text);
 });
 
